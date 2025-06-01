@@ -585,8 +585,6 @@
         });
 
         // Mapbox Access Token Configuration
-        // IMPORTANT: Replace this with your own public access token for production
-        // You can get a free token at: https://account.mapbox.com/access-tokens/
         const MAPBOX_ACCESS_TOKEN = 'pk.eyJ1Ijoia2F1bmdhdW5na2hhbnR6aW4iLCJhIjoiY21iZDNlNHR6MXZ4NjJqcTVjc3RwNzQ5NyJ9.AD33S91u-aDN-ERwS8SWFw';
         
         // Global variables
@@ -600,7 +598,6 @@
         let navigationMode = false;
         let targetStation = null;
         let watchId = null;
-        let routeLine = null; // Will represent the layer ID
         let stationMarkers = {};
         let currentSpeed = 0;
         let mapStyle = 'streets';
@@ -629,7 +626,8 @@
                 trackingInactive: 'Live tracking inactive',
                 stopNav: 'Stop Navigation',
                 time: 'Time',
-                mapError: 'Error loading map. Please check your internet connection.'
+                mapError: 'Error loading map. Please check your internet connection.',
+                routeError: 'Could not find a route to the station.'
             },
             ja: {
                 logoText: '日本駅ナビゲーター',
@@ -651,7 +649,8 @@
                 trackingInactive: 'ライブトラッキング停止中',
                 stopNav: 'ナビゲーション停止',
                 time: '時間',
-                mapError: 'マップの読み込みエラー。インターネット接続を確認してください。'
+                mapError: 'マップの読み込みエラー。インターネット接続を確認してください。',
+                routeError: '駅へのルートが見つかりませんでした。'
             }
         };
 
@@ -698,12 +697,12 @@
                 map = new mapboxgl.Map({
                     container: 'map',
                     style: mapStyles.streets,
-                    center: [139.6503, 35.6762], // Tokyo
+                    center: [139.6503, 35.6762], // Default to Tokyo
                     zoom: 13,
                     pitch: 0,
                     bearing: 0,
                     antialias: true,
-                    attributionControl: false
+                    attributionControl: false // Hide default attribution
                 });
 
                 // Add attribution control in corner
@@ -731,7 +730,7 @@
                  // Handle map style data load - needed to re-add layers after style change
                 map.on('styledata', () => {
                     add3DBuildingsLayer(); // Ensure 3D buildings are added back
-                    // Route layer will be added back by updateRoute if navigation is active
+                    // Route layer will be added back by fetchAndDisplayRoute/updateRoute if navigation is active
                 });
 
                 // Handle map errors
@@ -792,14 +791,14 @@
                     error => {
                         console.error('Geolocation error:', error);
                         updateLocationStatus(false);
-                        // Use default Tokyo location
+                        // Use default Tokyo location if location fails
                         userLocation = { 
                             lat: 35.6762, 
                             lng: 139.6503,
                             accuracy: 100 // Assume some default accuracy
                         };
-                        updateUserMarker(); // Still show marker at default
-                        fetchNearbyStations();
+                        updateUserMarker(); // Still show marker at default location
+                        fetchNearbyStations(); // Fetch stations around default location
                          showError(translations[currentLanguage].locationError + ". Using default location.");
                     },
                     {
@@ -810,14 +809,14 @@
                 );
             } else {
                 showError('Geolocation is not supported by your browser');
-                // Use default location
+                // Use default location if geolocation not supported
                 userLocation = { 
                     lat: 35.6762, 
                     lng: 139.6503,
                     accuracy: 100 // Assume some default accuracy
                 };
-                updateUserMarker(); // Still show marker at default
-                fetchNearbyStations();
+                updateUserMarker(); // Still show marker at default location
+                fetchNearbyStations(); // Fetch stations around default location
             }
         }
 
@@ -825,21 +824,25 @@
         function handleLocationUpdate(position) {
             const now = Date.now();
             
-            // Calculate speed if we have a previous position
+            // Calculate speed based on position change
             if (lastPosition && lastPositionTime) {
                 const timeDiff = (now - lastPositionTime) / 1000; // seconds
                  if (timeDiff > 0) { // Avoid division by zero
-                    const distance = calculateDistance(
+                    const distanceMoved = calculateDistance(
                         lastPosition.lat,
                         lastPosition.lng,
                         position.coords.latitude,
                         position.coords.longitude
                     );
-                     // Simple speed calculation (meters per second converted to km/h)
-                    currentSpeed = (distance / timeDiff) * 3.6; 
-                    // Use speed directly from position if available and more accurate
+                     // Calculated speed from movement (m/s)
+                    let calculatedSpeed_ms = distanceMoved / timeDiff; 
+                   
+                    // Use speed directly from position if available and seems reasonable
                     if (position.coords.speed !== null && position.coords.speed >= 0) {
-                        currentSpeed = position.coords.speed * 3.6; // m/s to km/h
+                        currentSpeed = position.coords.speed * 3.6; // Convert m/s to km/h
+                    } else {
+                         // Otherwise, use the calculated speed
+                         currentSpeed = calculatedSpeed_ms * 3.6; // Convert m/s to km/h
                     }
 
                     // Update speed display
@@ -847,9 +850,11 @@
                         $('#speedValue').text(currentSpeed.toFixed(1));
                     }
                  } else {
+                     // If no time difference or invalid speed, use position.coords.speed if available, else 0
                      currentSpeed = position.coords.speed !== null && position.coords.speed >= 0 ? position.coords.speed * 3.6 : 0;
                  }
             } else {
+                 // First position update, use position.coords.speed if available, else 0
                  currentSpeed = position.coords.speed !== null && position.coords.speed >= 0 ? position.coords.speed * 3.6 : 0;
             }
 
@@ -872,7 +877,9 @@
             if (followMode && map) {
                 map.flyTo({
                     center: [userLocation.lng, userLocation.lat],
-                    zoom: map.getZoom(), // Keep current zoom
+                    zoom: map.getZoom() < 15 ? 15 : map.getZoom(), // Zoom closer if zoomed out
+                    pitch: 0, // Remove pitch in follow mode for clarity
+                    bearing: 0, // Remove bearing in follow mode for clarity
                     essential: true,
                     duration: 500 // Shorter duration for smoother follow
                 });
@@ -880,12 +887,18 @@
 
             // Update navigation if active
             if (navigationMode && targetStation) {
-                updateNavigation();
+                 // Re-fetch and display the route from the new user location
+                 // This updates the route line and the distance/time in the panel
+                fetchAndDisplayRoute();
+                 // Speed panel update is already handled above
             }
 
-            // Update station distances if tracking
+            // Update station distances if tracking (less frequent updates might be needed depending on usage)
+            // We don't necessarily need to re-sort the list very frequently,
+            // but updating distances in the data ensures popups/details have latest info.
             if (isTracking && stations.length > 0) {
-                updateStationDistances();
+                 // Consider debouncing this if it causes performance issues
+                 // updateStationDistances(); // Uncomment if you want list distances to update live
             }
         }
 
@@ -908,25 +921,16 @@
                 anchor: 'center' // Center the dot on the coordinates
             })
             .setLngLat([userLocation.lng, userLocation.lat])
+             // Optionally add a popup with accuracy
+             .setPopup(new mapboxgl.Popup({ offset: 25 }).setHTML(`
+                 <strong>${translations[currentLanguage].yourLocation}</strong><br>
+                 Accuracy: ${userLocation.accuracy.toFixed(1)}m
+             `))
             .addTo(map);
 
              // The accuracy circle layer was removed as requested.
-             // If you ever wanted to add it back, you would update the 'user-accuracy' source here.
-             // Example (requires the source and layer to be added in initializeMap/styledata):
-             /*
-             if (map.getSource('user-accuracy')) {
-                 map.getSource('user-accuracy').setData({
-                     type: 'Feature',
-                     geometry: {
-                         type: 'Point',
-                         coordinates: [userLocation.lng, userLocation.lat]
-                     },
-                      properties: {
-                         accuracy: userLocation.accuracy || 10
-                     }
-                 });
-             }
-             */
+             // If you ever wanted to add it back, you would update the 'user-accuracy' source here
+             // and ensure the layer exists in initializeMap/styledata.
         }
 
         // Toggle tracking
@@ -953,6 +957,8 @@
                     $('#trackingBtn').addClass('active');
                     $('#trackingText').text(translations[currentLanguage].liveTracking);
                     $('#speedIndicator').addClass('show');
+                } else {
+                     showError('Geolocation is not supported by your browser.');
                 }
             } else {
                 stopTracking();
@@ -1121,7 +1127,8 @@
             addStationMarkers();
         }
 
-        // Calculate distance (Haversine formula)
+        // Calculate straight-line distance (Haversine formula)
+        // Used for sorting stations and simple arrival check
         function calculateDistance(lat1, lon1, lat2, lon2) {
             const R = 6371e3; // Earth's radius in meters
             const φ1 = lat1 * Math.PI / 180;
@@ -1137,22 +1144,30 @@
             return Math.round(R * c); // Distance in meters
         }
 
-        // Display stations
+        // Display stations in the list
         function displayStations() {
             const container = $('#stationListContainer');
-            container.empty();
-            
+            container.empty(); // Clear previous list
+
             if (stations.length === 0) {
-                container.html(`
-                    <div class="alert alert-warning">
-                        <i class="mdi mdi-alert"></i> ${translations[currentLanguage].noStations}
-                    </div>
-                `);
+                 if (!userLocation) {
+                     container.html(`
+                        <div class="alert alert-info">
+                           Getting your location to find stations...
+                        </div>
+                     `);
+                 } else {
+                    container.html(`
+                        <div class="alert alert-warning">
+                            <i class="mdi mdi-alert"></i> ${translations[currentLanguage].noStations}
+                        </div>
+                    `);
+                 }
                 return;
             }
             
             stations.forEach((station, index) => {
-                const walkingTime = station.distance !== -1 ? Math.round(station.distance / 80) : '--';
+                const walkingTime = station.distance !== -1 ? Math.round(station.distance / 80) : '--'; // Estimate walking time
                 const isNavigating = navigationMode && targetStation && targetStation.id === station.id;
                 
                 const card = $(`
@@ -1201,7 +1216,7 @@
             });
         }
 
-        // Add station markers
+        // Add station markers to Mapbox map
         function addStationMarkers() {
             if (!map || !map.isStyleLoaded()) return; // Ensure map and style are loaded
 
@@ -1233,7 +1248,7 @@
             });
             
             // Fit bounds to show all markers
-            if (stations.length > 0 && userLocation) {
+            if (stations.length > 0 && userLocation && map.isStyleLoaded()) {
                 const bounds = new mapboxgl.LngLatBounds();
                 bounds.extend([userLocation.lng, userLocation.lat]);
                 stations.forEach(station => {
@@ -1247,7 +1262,7 @@
                         duration: 1000 // Animation duration
                     });
                  }
-            } else if (userLocation) {
+            } else if (userLocation && map.isStyleLoaded()) {
                  // Just center on user if no stations
                  map.flyTo({
                     center: [userLocation.lng, userLocation.lat],
@@ -1257,7 +1272,7 @@
             }
         }
 
-        // Select station
+        // Select station (centers map on station)
         function selectStation(index) {
             $('.station-card').removeClass('active');
             $(`.station-card:eq(${index})`).addClass('active');
@@ -1266,149 +1281,142 @@
              if (map) {
                 map.flyTo({
                     center: [station.lng, station.lat],
-                    zoom: 17,
-                    pitch: 45,
+                    zoom: 16, // Slightly closer than adding all markers
+                    pitch: 0, // Reset pitch/bearing when selecting
                     bearing: 0,
                     essential: true,
                     duration: 1000
                 });
              }
             
+            // Open the popup for the selected station's marker
             if (stationMarkers[station.id]) {
                 stationMarkers[station.id].togglePopup();
             }
         }
 
-        // Navigate to station
+        // Navigate to station (starts navigation mode and fetches route)
         function navigateToStation(index) {
              if (!userLocation) {
-                 showError(translations[currentLanguage].locationError + ". Please allow location access.");
+                 showError(translations[currentLanguage].locationError + ". Please allow location access to start navigation.");
                  return;
              }
             const station = stations[index];
             
+            // If already navigating to this station, stop instead
             if (navigationMode && targetStation && targetStation.id === station.id) {
                 stopNavigation();
                 return;
             }
             
+            // Set navigation target and mode
             navigationMode = true;
             targetStation = station;
             
+            // Ensure tracking is active for live updates
             if (!isTracking) {
                 toggleTracking();
             }
             
+            // Ensure follow mode is active for hands-free viewing
             if (!followMode) {
                 toggleFollowMode();
             }
             
+            // Update station list UI to show active navigation
             displayStations();
+            
+            // Show the navigation panel
             $('#navigationPanel').addClass('show');
             
-            // Ensure map style is loaded before adding route layer
+            // Fetch and display the initial route
+            // Ensure map style is loaded before attempting to add route layer
             if (map.isStyleLoaded()) {
-                 updateRoute();
+                 fetchAndDisplayRoute();
             } else {
+                // Wait for style to load if necessary
                 map.once('styleloaded', () => {
-                    updateRoute();
+                    fetchAndDisplayRoute();
                 });
             }
         }
 
-        // Update route
-        function updateRoute() {
+        // Fetch route from Mapbox Directions API and display it
+        async function fetchAndDisplayRoute() {
             if (!map || !userLocation || !targetStation) return;
 
-            const routeSourceId = 'route';
-
-            const routeGeoJSON = {
-                'type': 'Feature',
-                'properties': {},
-                'geometry': {
-                    'type': 'LineString',
-                    'coordinates': [
-                        [userLocation.lng, userLocation.lat],
-                        [targetStation.lng, targetStation.lat]
-                    ]
-                }
+            const url = `https://api.mapbox.com/directions/v5/mapbox/walking/${userLocation.lng},${userLocation.lat};${targetStation.lng},${targetStation.lat}`;
+            const params = {
+                geometries: 'geojson',
+                access_token: MAPBOX_ACCESS_TOKEN,
+                alternatives: false, // Only need one route
+                overview: 'full', // Get full geometry
+                steps: false // Don't need step-by-step instructions for this
             };
 
-            // Check if the route source already exists
-            const sourceExists = map.getSource(routeSourceId);
+            try {
+                const response = await axios.get(url, { params });
+                const data = response.data;
 
-            if (sourceExists) {
-                // If source exists, just update its data
-                map.getSource(routeSourceId).setData(routeGeoJSON);
-            } else {
-                // If source does not exist, add source and layer
-                map.addSource(routeSourceId, {
-                    'type': 'geojson',
-                    'data': routeGeoJSON
-                });
-                
-                map.addLayer({
-                    'id': routeSourceId, // Use the same ID for the layer
-                    'type': 'line',
-                    'source': routeSourceId,
-                    'layout': {
-                        'line-join': 'round',
-                        'line-cap': 'round'
-                    },
-                    'paint': {
-                        'line-color': '#e60012',
-                        'line-width': 6,
-                        'line-opacity': 0.8,
-                        'line-blur': 1
+                if (data.routes && data.routes.length > 0) {
+                    const route = data.routes[0];
+                    const routeGeometry = route.geometry;
+                    const routeDistance = route.distance; // meters
+                    const routeDuration = route.duration; // seconds
+
+                    const routeSourceId = 'route';
+
+                    // Update map layer
+                    if (map.getSource(routeSourceId)) {
+                        // If source exists, just update its data
+                        map.getSource(routeSourceId).setData(routeGeometry);
+                    } else {
+                        // If source does not exist, add source and layer
+                        map.addSource(routeSourceId, {
+                            type: 'geojson',
+                            data: routeGeometry
+                        });
+                        map.addLayer({
+                            id: routeSourceId, // Use the same ID for the layer
+                            type: 'line',
+                            source: routeSourceId,
+                            layout: {
+                                'line-join': 'round',
+                                'line-cap': 'round'
+                            },
+                            paint: {
+                                'line-color': '#e60012',
+                                'line-width': 6,
+                                'line-opacity': 0.8,
+                                'line-blur': 1
+                            }
+                        });
                     }
-                });
+
+                    // Update navigation panel with accurate route data
+                    $('#navDistance').text(routeDistance < 1000 ? `${Math.round(routeDistance)}m` : `${(routeDistance/1000).toFixed(1)}km`);
+                    $('#navTime').text(`${Math.round(routeDuration / 60)}`); // Duration in minutes
+                    // $('#navSpeed') is updated by handleLocationUpdate using GPS speed
+
+                    // Check for arrival (still using simple proximity for reliability)
+                    const straightLineDistance = calculateDistance(userLocation.lat, userLocation.lng, targetStation.lat, targetStation.lng);
+                    if (straightLineDistance < 50) { // Use a threshold, e.g., 50 meters
+                        arriveAtStation();
+                    }
+
+                } else {
+                    console.warn('No route found by Mapbox API');
+                    showError(translations[currentLanguage].routeError);
+                    stopNavigation(); // Stop navigation if no route can be found
+                }
+
+            } catch (error) {
+                console.error('Error fetching directions:', error);
+                showError(translations[currentLanguage].routeError);
+                stopNavigation(); // Stop navigation on API error
             }
         }
 
-        // Update navigation
-        function updateNavigation() {
-            if (!navigationMode || !targetStation) return;
-            
-            updateRoute(); // Update the route line based on new user position
-            
-            const distance = calculateDistance(
-                userLocation.lat,
-                userLocation.lng,
-                targetStation.lat,
-                targetStation.lng
-            );
-            
-            const walkingTime = Math.round(distance / 80); // Approx. 80m/min walking speed
-            
-            $('#navDistance').text(distance < 1000 ? `${distance}m` : `${(distance/1000).toFixed(1)}km`);
-            $('#navTime').text(`${walkingTime}`);
-            $('#navSpeed').text(currentSpeed.toFixed(1));
-            
-            // Check if arrived (within 50m)
-            if (distance < 50) {
-                arriveAtStation();
-            }
-             // Note: Station distances in the list are updated by handleLocationUpdate which calls updateStationDistances
-        }
-
-        // Update station distances
-        function updateStationDistances() {
-            if (!userLocation) return;
-            
-            stations.forEach(station => {
-                station.distance = calculateDistance(
-                    userLocation.lat,
-                    userLocation.lng,
-                    station.lat,
-                    station.lng
-                );
-            });
-            
-            // Re-sort based on new distances
-            stations.sort((a, b) => a.distance - b.distance);
-            displayStations(); // Re-render the list with updated distances and order
-            // Station markers automatically update popups on click/hover with the latest distance
-        }
 
         // Arrive at station
         function arriveAtStation() {
@@ -1435,7 +1443,7 @@
                 toast.remove();
             });
             
-            stopNavigation();
+            stopNavigation(); // Stop navigation after arrival
         }
 
         // Stop navigation
@@ -1453,10 +1461,10 @@
             }
             
             $('#navigationPanel').removeClass('show');
-            displayStations(); // Update card states
+            displayStations(); // Update card states (remove 'navigating' class)
         }
 
-        // Show station details
+        // Show station details modal
         function showStationDetails(index) {
             const station = stations[index];
             
@@ -1494,20 +1502,22 @@
             });
         }
 
-        // Search station
+        // Search station by name
         function searchStation() {
             const searchTerm = $('#searchInput').val().toLowerCase();
             if (!searchTerm) return;
             
+            // Filter stations by name (English or Japanese)
             const filtered = stations.filter(station => 
                 station.name.toLowerCase().includes(searchTerm) ||
-                (station.nameJa && station.nameJa.includes(searchTerm)) // Check if nameJa exists
+                (station.nameJa && station.nameJa.includes(searchTerm))
             );
             
             if (filtered.length > 0) {
+                // Find the index of the first matching station
                 const index = stations.findIndex(s => s.id === filtered[0].id);
                 if (index !== -1) {
-                    selectStation(index);
+                    selectStation(index); // Select and center map on the found station
                 }
             } else {
                 showError(`No station found matching "${searchTerm}"`);
@@ -1518,38 +1528,56 @@
         function setLanguage(lang) {
             currentLanguage = lang;
             
+            // Update language buttons active state
             $('.btn-group button').removeClass('active');
             $(`.btn-group button:contains(${lang === 'en' ? 'EN' : '日本語'})`).addClass('active');
             
-            // Update texts
+            // Update all visible text elements
             $('#logoText').text(translations[lang].logoText);
             $('#searchInput').attr('placeholder', translations[lang].searchPlaceholder);
             $('#searchBtnText').text(translations[lang].searchBtn);
+            $('#locationStatusTitle').html(`<i class="mdi mdi-map-marker"></i> ${userLocation ? translations[lang].locationFound : translations[lang].locationStatusTitle}`); // Update status title
+            $('#locationDetails').text(userLocation ? `${userLocation.lat.toFixed(6)}, ${userLocation.lng.toFixed(6)}` : translations[lang].locationDetails); // Update details
             $('#nearbyStationsTitle').text(translations[lang].nearbyStations);
             $('#trackingText').text(isTracking ? translations[lang].liveTracking : translations[lang].trackingInactive);
             $('#navDistanceLabel').text(translations[lang].distance);
             $('#navTimeLabel').text(translations[lang].time);
             $('#stopNavText').text(translations[lang].stopNav);
+             // Ensure error message text is updated if shown
+             if($('#errorToast').is(':visible')) {
+                  // Currently, the message is set when shown, this might not be necessary
+                  // but you could re-set it if needed for currently displayed errors.
+             }
             
-            displayStations(); // Re-render list with localized names/distances
-            // Station markers automatically update popups on click, no need to redraw
+            displayStations(); // Re-render station list with localized names/distances
+             // Station marker popups are dynamic and will update on click/hover
         }
 
-        // Reset map
+        // Reset map view to user location with a standard zoom/pitch
         function resetMap() {
             if (userLocation && map) {
                 map.flyTo({
                     center: [userLocation.lng, userLocation.lat],
-                    zoom: 14,
+                    zoom: 14, // Standard zoom level
+                    pitch: 0, // Flat view
+                    bearing: 0, // North up
+                    essential: true,
+                    duration: 1000
+                });
+            } else if (map) {
+                 // If no user location, just reset to default Tokyo view
+                 map.flyTo({
+                    center: [139.6503, 35.6762], // Tokyo
+                    zoom: 13,
                     pitch: 0,
                     bearing: 0,
                     essential: true,
                     duration: 1000
-                });
+                 });
             }
         }
 
-        // Change map style
+        // Change map style cyclically
         function changeMapStyle() {
              if (!map || !map.isStyleLoaded()) {
                  showError('Map is not ready yet.');
@@ -1562,7 +1590,7 @@
             
             map.setStyle(mapStyles[mapStyle]);
             
-            // Show style name
+            // Show style name toast
             const styleName = mapStyle.charAt(0).toUpperCase() + mapStyle.slice(1).replace(/-/g, ' ');
             const toast = $(`
                 <div class="toast position-fixed bottom-0 end-0 m-3" role="alert" data-bs-delay="2000">
@@ -1580,23 +1608,22 @@
                 toast.remove();
             });
 
-             // The 'styledata' event listener automatically handles re-adding layers like 3d buildings and the route.
-             // User marker is handled by handleLocationUpdate/updateUserMarker.
+             // The 'styledata' event listener automatically handles re-adding layers like 3d buildings and the route if needed.
         }
 
-        // Handle enter key in search
+        // Handle Enter key press in the search input
         $('#searchInput').on('keypress', function(e) {
             if (e.key === 'Enter') {
                 searchStation();
             }
         });
 
-        // Clean up on page unload
+        // Clean up on page unload (stops tracking and removes map)
         $(window).on('beforeunload', function() {
             if (watchId) {
                 navigator.geolocation.clearWatch(watchId);
             }
-             // Clean up map if it exists (important for single-page apps, less crucial for simple static)
+             // Clean up map resources
             if (map) {
                 map.remove();
             }
