@@ -1,0 +1,1606 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Japan Station Navigator - 日本駅ナビゲーター</title>
+    
+    <!-- Mapbox GL JS CSS -->
+    <link href='https://api.mapbox.com/mapbox-gl-js/v3.0.1/mapbox-gl.css' rel='stylesheet' />
+    
+    <!-- Bootstrap 5 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    
+    <!-- Material Design Icons -->
+    <link href="https://cdn.jsdelivr.net/npm/@mdi/font@7.2.96/css/materialdesignicons.min.css" rel="stylesheet">
+    
+    <!-- AOS (Animate On Scroll) -->
+    <link href="https://unpkg.com/aos@2.3.1/dist/aos.css" rel="stylesheet">
+    
+    <!-- Animate CSS -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css">
+    
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --primary-color: #e60012;
+            --secondary-color: #0068b7;
+            --accent-color: #f39800;
+            --dark-bg: #1a1a2e;
+            --light-bg: #f8f9fa;
+            --card-bg: #ffffff;
+            --text-primary: #212529;
+            --text-secondary: #6c757d;
+            --shadow-sm: 0 2px 4px rgba(0,0,0,0.08);
+            --shadow: 0 4px 6px rgba(0,0,0,0.1);
+            --shadow-lg: 0 10px 15px rgba(0,0,0,0.15);
+            --success-color: #28a745;
+            --warning-color: #ffc107;
+            --error-color: #dc3545;
+            --border-radius: 16px;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background-color: var(--light-bg);
+            color: var(--text-primary);
+            overflow-x: hidden;
+        }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 10px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #f1f1f1;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: var(--secondary-color);
+            border-radius: 5px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--primary-color);
+        }
+
+        /* Loading Screen */
+        .loading-screen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 9999;
+            transition: opacity 0.5s ease;
+        }
+
+        .loading-content {
+            text-align: center;
+            color: white;
+        }
+
+        .train-animation {
+            width: 120px;
+            height: 120px;
+            margin: 0 auto 2rem;
+            position: relative;
+        }
+
+        .train-animation svg {
+            width: 100%;
+            height: 100%;
+            animation: slideIn 2s ease-in-out infinite;
+        }
+
+        @keyframes slideIn {
+            0% { transform: translateX(-100px); opacity: 0; }
+            50% { opacity: 1; }
+            100% { transform: translateX(100px); opacity: 0; }
+        }
+
+        /* Header */
+        .navbar-custom {
+            background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+            box-shadow: var(--shadow);
+            padding: 1rem 0;
+        }
+
+        .navbar-brand {
+            font-weight: bold;
+            font-size: 1.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .navbar-brand i {
+            font-size: 2rem;
+        }
+
+        /* Glass Morphism Effect */
+        .glass-card {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: var(--border-radius);
+            box-shadow: var(--shadow);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            transition: all 0.3s ease;
+        }
+
+        .glass-card:hover {
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-lg);
+        }
+
+        /* Map Container */
+        #map {
+            height: 600px;
+            border-radius: var(--border-radius);
+            overflow: hidden;
+            position: relative;
+        }
+
+        /* Custom Map Controls */
+        .map-controls {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            z-index: 1000;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .map-control-btn {
+            width: 48px;
+            height: 48px;
+            background: white;
+            border: none;
+            border-radius: 50%;
+            box-shadow: var(--shadow);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .map-control-btn:hover {
+            transform: scale(1.1);
+            box-shadow: var(--shadow-lg);
+        }
+
+        .map-control-btn.active {
+            background: var(--primary-color);
+            color: white;
+        }
+
+        /* Station Cards */
+        .station-card {
+            margin-bottom: 1rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .station-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
+            transition: left 0.5s;
+        }
+
+        .station-card:hover::before {
+            left: 100%;
+        }
+
+        .station-card:hover {
+            transform: translateX(5px);
+        }
+
+        .station-card.active {
+            border-left: 4px solid var(--primary-color);
+            background: linear-gradient(to right, rgba(230, 0, 18, 0.05), transparent);
+        }
+
+        .station-card.navigating {
+            border-left: 4px solid var(--success-color);
+            background: linear-gradient(to right, rgba(40, 167, 69, 0.05), transparent);
+        }
+
+        /* Distance Badge */
+        .distance-badge {
+            background: var(--accent-color);
+            color: white;
+            padding: 0.25rem 0.75rem;
+            border-radius: 20px;
+            font-size: 0.875rem;
+            font-weight: 600;
+            display: inline-block;
+        }
+
+        /* Navigation Panel */
+        .navigation-panel {
+            position: fixed;
+            bottom: 2rem;
+            left: 50%;
+            transform: translateX(-50%);
+            background: white;
+            border-radius: var(--border-radius);
+            box-shadow: var(--shadow-lg);
+            padding: 1.5rem 2rem;
+            z-index: 1001;
+            display: none;
+            min-width: 320px;
+            max-width: 90%;
+        }
+
+        .navigation-panel.show {
+            display: block;
+            animation: slideUp 0.5s ease;
+        }
+
+        @keyframes slideUp {
+            from {
+                opacity: 0;
+                transform: translateX(-50%) translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(-50%) translateY(0);
+            }
+        }
+
+        /* Speed Indicator */
+        .speed-indicator {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 12px;
+            padding: 1rem;
+            box-shadow: var(--shadow);
+            z-index: 1000;
+            display: none;
+        }
+
+        .speed-indicator.show {
+            display: block;
+            animation: fadeIn 0.3s ease;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        /* Live Pulse Animation */
+        .live-indicator {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            background: var(--success-color);
+            border-radius: 50%;
+            margin-right: 0.5rem;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% {
+                box-shadow: 0 0 0 0 rgba(40, 167, 69, 0.7);
+            }
+            70% {
+                box-shadow: 0 0 0 10px rgba(40, 167, 69, 0);
+            }
+            100% {
+                box-shadow: 0 0 0 0 rgba(40, 167, 69, 0);
+            }
+        }
+
+        /* Custom User Location Marker (Just the dot) */
+        .user-location-dot {
+            width: 20px;
+            height: 20px;
+            background: #007cbf;
+            border: 3px solid white;
+            border-radius: 50%;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+        }
+
+        /* Custom Station Marker */
+        .station-marker {
+            background: var(--primary-color);
+            color: white;
+            padding: 8px 12px; /* Adjusted padding slightly */
+            border-radius: 20px;
+            font-weight: 600;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+            font-size: 14px;
+            position: relative;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            max-width: 150px; /* Limit width and allow wrap */
+            text-align: center;
+            line-height: 1.2; /* Adjust line height for wrapped text */
+        }
+
+        .station-marker::after {
+            content: '';
+            position: absolute;
+            bottom: -8px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 0;
+            height: 0;
+            border-left: 8px solid transparent;
+            border-right: 8px solid transparent;
+            border-top: 8px solid var(--primary-color);
+        }
+
+        /* Mobile Responsive */
+        @media (max-width: 768px) {
+            #map {
+                height: 400px;
+            }
+            
+            .navigation-panel {
+                bottom: 1rem;
+                padding: 1rem;
+            }
+            
+            .station-list {
+                max-height: 350px;
+            }
+        }
+
+        /* Loading Animation */
+        .skeleton {
+            background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+            background-size: 200% 100%;
+            animation: loading 1.5s infinite;
+        }
+
+        @keyframes loading {
+            0% { background-position: 200% 0; }
+            100% { background-position: -200% 0; }
+        }
+
+        /* Error Toast */
+        .error-toast {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: var(--error-color);
+            color: white;
+            padding: 1rem 1.5rem;
+            border-radius: 8px;
+            box-shadow: var(--shadow-lg);
+            display: none;
+            z-index: 9999;
+            animation: slideInRight 0.3s ease;
+        }
+
+        @keyframes slideInRight {
+            from {
+                transform: translateX(100%);
+            }
+            to {
+                transform: translateX(0);
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Loading Screen -->
+    <div class="loading-screen" id="loadingScreen">
+        <div class="loading-content">
+            <div class="train-animation">
+                <svg viewBox="0 0 100 100" fill="white">
+                    <rect x="10" y="40" width="80" height="20" rx="2"/>
+                    <rect x="20" y="30" width="60" height="10" rx="2"/>
+                    <circle cx="25" cy="65" r="5"/>
+                    <circle cx="75" cy="65" r="5"/>
+                </svg>
+            </div>
+            <h2 class="animate__animated animate__fadeIn">Loading Station Navigator...</h2>
+            <p class="animate__animated animate__fadeIn animate__delay-1s">駅ナビゲーターを読み込んでいます...</p>
+        </div>
+    </div>
+
+    <!-- Error Toast -->
+    <div class="error-toast" id="errorToast">
+        <i class="mdi mdi-alert-circle"></i>
+        <span id="errorMessage">An error occurred</span>
+    </div>
+
+    <!-- Navigation -->
+    <nav class="navbar navbar-expand-lg navbar-dark navbar-custom sticky-top">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="#">
+                <i class="mdi mdi-train"></i>
+                <span id="logoText">Japan Station Navigator</span>
+            </a>
+            <div class="ms-auto">
+                <div class="btn-group" role="group">
+                    <button type="button" class="btn btn-outline-light active" onclick="setLanguage('en')">EN</button>
+                    <button type="button" class="btn btn-outline-light" onclick="setLanguage('ja')">日本語</button>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Container -->
+    <div class="container-fluid py-4">
+        <!-- Search Section -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="glass-card p-4" data-aos="fade-down">
+                    <div class="input-group">
+                        <span class="input-group-text bg-transparent border-0">
+                            <i class="mdi mdi-magnify"></i>
+                        </span>
+                        <input type="text" class="form-control border-0 bg-transparent" 
+                               id="searchInput" 
+                               placeholder="Search for stations...">
+                        <button class="btn btn-primary" onclick="searchStation()">
+                            <i class="mdi mdi-arrow-right"></i>
+                            <span id="searchBtnText">Search</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Location Status -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="glass-card p-4 text-center" data-aos="fade-up">
+                    <h5 class="mb-3">
+                        <i class="mdi mdi-map-marker"></i>
+                        <span id="locationStatusTitle">Finding your location...</span>
+                    </h5>
+                    <p class="text-muted mb-2" id="locationDetails">Detecting current position...</p>
+                    <div class="d-inline-flex align-items-center">
+                        <span class="live-indicator"></span>
+                        <small class="text-muted" id="trackingText">Live tracking inactive</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <div class="row">
+            <!-- Station List -->
+            <div class="col-lg-4 mb-4">
+                <div class="glass-card p-4" data-aos="fade-right">
+                    <h5 class="mb-4">
+                        <i class="mdi mdi-train-variant"></i>
+                        <span id="nearbyStationsTitle">Nearby Stations</span>
+                    </h5>
+                    <div class="station-list overflow-auto" style="max-height: 500px;" id="stationListContainer">
+                        <!-- Skeleton Loading -->
+                        <div class="card mb-3 skeleton" style="height: 120px;"></div>
+                        <div class="card mb-3 skeleton" style="height: 120px;"></div>
+                        <div class="card mb-3 skeleton" style="height: 120px;"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Map -->
+            <div class="col-lg-8 mb-4">
+                <div class="glass-card p-3" data-aos="fade-left">
+                    <div id="map"></div>
+                    
+                    <!-- Speed Indicator -->
+                    <div class="speed-indicator" id="speedIndicator">
+                        <div class="d-flex align-items-baseline">
+                            <h3 class="mb-0 text-primary" id="speedValue">0</h3>
+                            <small class="ms-2 text-muted">km/h</small>
+                        </div>
+                    </div>
+                    
+                    <!-- Map Controls -->
+                    <div class="map-controls">
+                        <button class="map-control-btn" onclick="resetMap()" title="Reset View">
+                            <i class="mdi mdi-home"></i>
+                        </button>
+                        <button class="map-control-btn" onclick="changeMapStyle()" title="Change Style">
+                            <i class="mdi mdi-layers"></i>
+                        </button>
+                        <button class="map-control-btn" id="trackingBtn" onclick="toggleTracking()" title="Live Tracking">
+                            <i class="mdi mdi-crosshairs-gps"></i>
+                        </button>
+                        <button class="map-control-btn" id="followBtn" onclick="toggleFollowMode()" title="Follow Mode">
+                            <i class="mdi mdi-navigation"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Navigation Panel -->
+    <div class="navigation-panel" id="navigationPanel">
+        <div class="row text-center">
+            <div class="col-4">
+                <h4 class="mb-0 text-primary" id="navDistance">--</h4>
+                <small class="text-muted" id="navDistanceLabel">Distance</small>
+            </div>
+            <div class="col-4">
+                <h4 class="mb-0 text-success" id="navTime">--</h4>
+                <small class="text-muted" id="navTimeLabel">Time</small>
+            </div>
+            <div class="col-4">
+                <h4 class="mb-0 text-warning" id="navSpeed">--</h4>
+                <small class="text-muted">km/h</small>
+            </div>
+        </div>
+        <div class="text-center mt-3">
+            <button class="btn btn-danger btn-sm" onclick="stopNavigation()">
+                <i class="mdi mdi-stop"></i>
+                <span id="stopNavText">Stop Navigation</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <!-- jQuery -->
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    
+    <!-- Bootstrap 5 JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    
+    <!-- Mapbox GL JS -->
+    <script src='https://api.mapbox.com/mapbox-gl-js/v3.0.1/mapbox-gl.js'></script>
+    
+    <!-- AOS JS -->
+    <script src="https://unpkg.com/aos@2.3.1/dist/aos.js"></script>
+    
+    <!-- Axios for AJAX -->
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+
+    <script>
+        // Initialize AOS
+        AOS.init({
+            duration: 800,
+            once: true
+        });
+
+        // Mapbox Access Token Configuration
+        // IMPORTANT: Replace this with your own public access token for production
+        // You can get a free token at: https://account.mapbox.com/access-tokens/
+        const MAPBOX_ACCESS_TOKEN = 'pk.eyJ1Ijoia2F1bmdhdW5na2hhbnR6aW4iLCJhIjoiY21iZDNlNHR6MXZ4NjJqcTVjc3RwNzQ5NyJ9.AD33S91u-aDN-ERwS8SWFw';
+        
+        // Global variables
+        let map;
+        let userMarker; // The main blue dot marker
+        let userLocation = null;
+        let stations = [];
+        let currentLanguage = 'en';
+        let isTracking = false;
+        let followMode = false;
+        let navigationMode = false;
+        let targetStation = null;
+        let watchId = null;
+        let routeLine = null; // Will represent the layer ID
+        let stationMarkers = {};
+        let currentSpeed = 0;
+        let mapStyle = 'streets';
+        let lastPosition = null;
+        let lastPositionTime = null;
+
+        // Language translations
+        const translations = {
+            en: {
+                logoText: 'Japan Station Navigator',
+                searchPlaceholder: 'Search for stations...',
+                searchBtn: 'Search',
+                locationStatusTitle: 'Finding your location...',
+                locationDetails: 'Detecting current position...',
+                nearbyStations: 'Nearby Stations',
+                distance: 'Distance',
+                navigate: 'Navigate',
+                details: 'Details',
+                yourLocation: 'Your Location',
+                walkingTime: 'Walking time',
+                minutes: 'min',
+                locationFound: 'Your location found!',
+                locationError: 'Unable to get location',
+                noStations: 'No stations found nearby',
+                liveTracking: 'Live tracking active',
+                trackingInactive: 'Live tracking inactive',
+                stopNav: 'Stop Navigation',
+                time: 'Time',
+                mapError: 'Error loading map. Please check your internet connection.'
+            },
+            ja: {
+                logoText: '日本駅ナビゲーター',
+                searchPlaceholder: '駅を検索...',
+                searchBtn: '検索',
+                locationStatusTitle: '現在地を検索中...',
+                locationDetails: '現在の位置を検出しています...',
+                nearbyStations: '近くの駅',
+                distance: '距離',
+                navigate: 'ナビゲート',
+                details: '詳細',
+                yourLocation: '現在地',
+                walkingTime: '徒歩時間',
+                minutes: '分',
+                locationFound: '現在地が見つかりました！',
+                locationError: '位置情報を取得できません',
+                noStations: '近くに駅が見つかりません',
+                liveTracking: 'ライブトラッキング中',
+                trackingInactive: 'ライブトラッキング停止中',
+                stopNav: 'ナビゲーション停止',
+                time: '時間',
+                mapError: 'マップの読み込みエラー。インターネット接続を確認してください。'
+            }
+        };
+
+        // Map styles
+        const mapStyles = {
+            streets: 'mapbox://styles/mapbox/streets-v12',
+            satellite: 'mapbox://styles/mapbox/satellite-streets-v12',
+            outdoors: 'mapbox://styles/mapbox/outdoors-v12',
+            light: 'mapbox://styles/mapbox/light-v11',
+            dark: 'mapbox://styles/mapbox/dark-v11',
+            navigation: 'mapbox://styles/mapbox/navigation-day-v1'
+        };
+
+        // Initialize app
+        $(document).ready(function() {
+            // Hide loading screen
+            setTimeout(() => {
+                $('#loadingScreen').fadeOut(500);
+            }, 2000);
+
+            // Initialize map
+            initializeMap();
+            
+            // Get current location
+            getCurrentLocation();
+        });
+
+        // Show error message
+        function showError(message) {
+            $('#errorMessage').text(message);
+            $('#errorToast').fadeIn(300);
+            setTimeout(() => {
+                $('#errorToast').fadeOut(300);
+            }, 5000);
+        }
+
+        // Initialize Mapbox
+        function initializeMap() {
+            try {
+                // Set access token
+                mapboxgl.accessToken = MAPBOX_ACCESS_TOKEN;
+                
+                // Create map
+                map = new mapboxgl.Map({
+                    container: 'map',
+                    style: mapStyles.streets,
+                    center: [139.6503, 35.6762], // Tokyo
+                    zoom: 13,
+                    pitch: 0,
+                    bearing: 0,
+                    antialias: true,
+                    attributionControl: false
+                });
+
+                // Add attribution control in corner
+                map.addControl(new mapboxgl.AttributionControl({
+                    compact: true
+                }), 'bottom-left');
+
+                // Add navigation controls
+                map.addControl(new mapboxgl.NavigationControl({
+                    visualizePitch: true
+                }), 'bottom-right');
+
+                // Add scale control
+                map.addControl(new mapboxgl.ScaleControl({
+                    maxWidth: 200,
+                    unit: 'metric'
+                }), 'bottom-left');
+
+                // Handle map load
+                map.on('load', () => {
+                    // Add 3D buildings layer
+                    add3DBuildingsLayer();
+                });
+
+                 // Handle map style data load - needed to re-add layers after style change
+                map.on('styledata', () => {
+                    add3DBuildingsLayer(); // Ensure 3D buildings are added back
+                    // Route layer will be added back by updateRoute if navigation is active
+                });
+
+                // Handle map errors
+                map.on('error', (e) => {
+                    console.error('Map error:', e);
+                    showError(translations[currentLanguage].mapError);
+                });
+
+            } catch (error) {
+                console.error('Failed to initialize map:', error);
+                showError(translations[currentLanguage].mapError);
+            }
+        }
+
+        // Helper to add 3D buildings layer
+        function add3DBuildingsLayer() {
+             if (!map || !map.isStyleLoaded()) return;
+
+            if (!map.getLayer('3d-buildings')) {
+                const layers = map.getStyle().layers;
+                let firstSymbolId;
+                for (let i = 0; i < layers.length; i++) {
+                    if (layers[i].type === 'symbol') {
+                        firstSymbolId = layers[i].id;
+                        break;
+                    }
+                }
+
+                 if(map.getSource('composite')) { // Ensure source exists first
+                    map.addLayer({
+                        'id': '3d-buildings',
+                        'source': 'composite',
+                        'source-layer': 'building',
+                        'filter': ['==', 'extrude', 'true'],
+                        'type': 'fill-extrusion',
+                        'minzoom': 15,
+                        'paint': {
+                            'fill-extrusion-color': '#aaa',
+                            'fill-extrusion-height': ['get', 'height'],
+                            'fill-extrusion-base': ['get', 'min_height'],
+                            'fill-extrusion-opacity': 0.6
+                        }
+                    }, firstSymbolId // Add before symbol layers for proper rendering
+                    );
+                }
+            }
+        }
+
+
+        // Get current location
+        function getCurrentLocation() {
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(
+                    position => {
+                        handleLocationUpdate(position);
+                        fetchNearbyStations();
+                    },
+                    error => {
+                        console.error('Geolocation error:', error);
+                        updateLocationStatus(false);
+                        // Use default Tokyo location
+                        userLocation = { 
+                            lat: 35.6762, 
+                            lng: 139.6503,
+                            accuracy: 100 // Assume some default accuracy
+                        };
+                        updateUserMarker(); // Still show marker at default
+                        fetchNearbyStations();
+                         showError(translations[currentLanguage].locationError + ". Using default location.");
+                    },
+                    {
+                        enableHighAccuracy: true,
+                        timeout: 10000,
+                        maximumAge: 0
+                    }
+                );
+            } else {
+                showError('Geolocation is not supported by your browser');
+                // Use default location
+                userLocation = { 
+                    lat: 35.6762, 
+                    lng: 139.6503,
+                    accuracy: 100 // Assume some default accuracy
+                };
+                updateUserMarker(); // Still show marker at default
+                fetchNearbyStations();
+            }
+        }
+
+        // Handle location update
+        function handleLocationUpdate(position) {
+            const now = Date.now();
+            
+            // Calculate speed if we have a previous position
+            if (lastPosition && lastPositionTime) {
+                const timeDiff = (now - lastPositionTime) / 1000; // seconds
+                 if (timeDiff > 0) { // Avoid division by zero
+                    const distance = calculateDistance(
+                        lastPosition.lat,
+                        lastPosition.lng,
+                        position.coords.latitude,
+                        position.coords.longitude
+                    );
+                     // Simple speed calculation (meters per second converted to km/h)
+                    currentSpeed = (distance / timeDiff) * 3.6; 
+                    // Use speed directly from position if available and more accurate
+                    if (position.coords.speed !== null && position.coords.speed >= 0) {
+                        currentSpeed = position.coords.speed * 3.6; // m/s to km/h
+                    }
+
+                    // Update speed display
+                    if ($('#speedIndicator').hasClass('show')) {
+                        $('#speedValue').text(currentSpeed.toFixed(1));
+                    }
+                 } else {
+                     currentSpeed = position.coords.speed !== null && position.coords.speed >= 0 ? position.coords.speed * 3.6 : 0;
+                 }
+            } else {
+                 currentSpeed = position.coords.speed !== null && position.coords.speed >= 0 ? position.coords.speed * 3.6 : 0;
+            }
+
+            // Update position
+            lastPosition = {
+                lat: position.coords.latitude,
+                lng: position.coords.longitude
+            };
+            lastPositionTime = now;
+
+            userLocation = {
+                lat: position.coords.latitude,
+                lng: position.coords.longitude,
+                accuracy: position.coords.accuracy || 10 // Default accuracy if not provided
+            };
+
+            updateLocationStatus(true);
+            updateUserMarker(); // Update the user's dot marker
+            
+            if (followMode && map) {
+                map.flyTo({
+                    center: [userLocation.lng, userLocation.lat],
+                    zoom: map.getZoom(), // Keep current zoom
+                    essential: true,
+                    duration: 500 // Shorter duration for smoother follow
+                });
+            }
+
+            // Update navigation if active
+            if (navigationMode && targetStation) {
+                updateNavigation();
+            }
+
+            // Update station distances if tracking
+            if (isTracking && stations.length > 0) {
+                updateStationDistances();
+            }
+        }
+
+        // Update user marker (the blue dot)
+        function updateUserMarker() {
+            if (!map || !userLocation) return;
+
+            // Remove existing marker
+            if (userMarker) {
+                userMarker.remove();
+            }
+
+            // Create marker element
+            const el = document.createElement('div');
+            el.className = 'user-location-dot';
+
+            // Add marker to map
+            userMarker = new mapboxgl.Marker({
+                element: el,
+                anchor: 'center' // Center the dot on the coordinates
+            })
+            .setLngLat([userLocation.lng, userLocation.lat])
+            .addTo(map);
+
+             // The accuracy circle layer was removed as requested.
+             // If you ever wanted to add it back, you would update the 'user-accuracy' source here.
+             // Example (requires the source and layer to be added in initializeMap/styledata):
+             /*
+             if (map.getSource('user-accuracy')) {
+                 map.getSource('user-accuracy').setData({
+                     type: 'Feature',
+                     geometry: {
+                         type: 'Point',
+                         coordinates: [userLocation.lng, userLocation.lat]
+                     },
+                      properties: {
+                         accuracy: userLocation.accuracy || 10
+                     }
+                 });
+             }
+             */
+        }
+
+        // Toggle tracking
+        function toggleTracking() {
+            if (!isTracking) {
+                if (navigator.geolocation) {
+                    watchId = navigator.geolocation.watchPosition(
+                        position => {
+                            handleLocationUpdate(position);
+                        },
+                        error => {
+                            console.error('Tracking error:', error);
+                            showError('Failed to track location: ' + error.message);
+                            stopTracking();
+                        },
+                        {
+                            enableHighAccuracy: true,
+                            timeout: 5000,
+                            maximumAge: 0
+                        }
+                    );
+                    
+                    isTracking = true;
+                    $('#trackingBtn').addClass('active');
+                    $('#trackingText').text(translations[currentLanguage].liveTracking);
+                    $('#speedIndicator').addClass('show');
+                }
+            } else {
+                stopTracking();
+            }
+        }
+
+        // Stop tracking
+        function stopTracking() {
+            if (watchId) {
+                navigator.geolocation.clearWatch(watchId);
+                watchId = null;
+            }
+            
+            isTracking = false;
+            $('#trackingBtn').removeClass('active');
+            $('#trackingText').text(translations[currentLanguage].trackingInactive);
+            $('#speedIndicator').removeClass('show');
+        }
+
+        // Toggle follow mode
+        function toggleFollowMode() {
+            followMode = !followMode;
+            $('#followBtn').toggleClass('active', followMode);
+            
+            if (followMode && userLocation && map) {
+                map.flyTo({
+                    center: [userLocation.lng, userLocation.lat],
+                    zoom: map.getZoom() < 15 ? 15 : map.getZoom(), // Zoom closer if zoomed out
+                    pitch: 0, // Remove pitch in follow mode for clarity
+                    bearing: 0, // Remove bearing in follow mode for clarity
+                    essential: true,
+                    duration: 500
+                });
+                
+                // Auto-enable tracking if not already active
+                if (!isTracking) {
+                    toggleTracking();
+                }
+            } else if (map) {
+                 // When turning follow mode off, reset pitch/bearing
+                 map.flyTo({
+                    center: map.getCenter(),
+                    zoom: map.getZoom(),
+                    pitch: map.getPitch(), // Keep current pitch
+                    bearing: map.getBearing(), // Keep current bearing
+                    essential: true,
+                    duration: 500
+                });
+            }
+        }
+
+        // Update location status
+        function updateLocationStatus(success) {
+            if (success && userLocation) {
+                $('#locationStatusTitle').html(`<i class="mdi mdi-check-circle text-success"></i> ${translations[currentLanguage].locationFound}`);
+                $('#locationDetails').text(`${userLocation.lat.toFixed(6)}, ${userLocation.lng.toFixed(6)}`);
+            } else {
+                $('#locationStatusTitle').html(`<i class="mdi mdi-alert-circle text-danger"></i> ${translations[currentLanguage].locationError}`);
+                 $('#locationDetails').text('Using default location: Tokyo');
+            }
+        }
+
+        // Fetch nearby stations
+        async function fetchNearbyStations() {
+            if (!userLocation) {
+                console.warn('User location not available for fetching stations.');
+                // Show skeleton loading if no location yet
+                 $('#stationListContainer').html(`
+                    <div class="card mb-3 skeleton" style="height: 120px;"></div>
+                    <div class="card mb-3 skeleton" style="height: 120px;"></div>
+                    <div class="card mb-3 skeleton" style="height: 120px;"></div>
+                 `);
+                return;
+            }
+            try {
+                // Using Overpass API
+                const radius = 2000; // Meters
+                const query = `
+                    [out:json][timeout:25];
+                    (
+                        node["railway"="station"](around:${radius},${userLocation.lat},${userLocation.lng});
+                        node["railway"="halt"](around:${radius},${userLocation.lat},${userLocation.lng});
+                        node["public_transport"="station"]["train"="yes"](around:${radius},${userLocation.lat},${userLocation.lng});
+                        node["public_transport"="stop_position"]["train"="yes"](around:${radius},${userLocation.lat},${userLocation.lng});
+                    );
+                    out body;
+                `;
+                
+                const response = await axios.post('https://overpass-api.de/api/interpreter', query, {
+                    headers: { 'Content-Type': 'text/plain' }
+                });
+                
+                processStationData(response.data.elements);
+            } catch (error) {
+                console.error('Error fetching stations:', error);
+                useMockStationData();
+                showError('Failed to fetch stations.');
+            }
+        }
+
+        // Process station data
+        function processStationData(elements) {
+             if (!userLocation) {
+                 // Handle case where location isn't available yet
+                 stations = elements.map(element => ({
+                     id: element.id,
+                     name: element.tags.name || element.tags['name:en'] || 'Unknown Station',
+                     nameJa: element.tags['name:ja'] || element.tags.name || '不明な駅',
+                     lat: element.lat,
+                     lng: element.lon,
+                     distance: -1, // Indicate distance is unknown
+                     operator: element.tags.operator || 'Unknown',
+                     lines: element.tags.railway || element.tags.line || 'Unknown Line'
+                 }));
+             } else {
+                stations = elements.map(element => {
+                    const distance = calculateDistance(
+                        userLocation.lat,
+                        userLocation.lng,
+                        element.lat,
+                        element.lon
+                    );
+                    
+                    return {
+                        id: element.id,
+                        name: element.tags.name || element.tags['name:en'] || 'Unknown Station',
+                        nameJa: element.tags['name:ja'] || element.tags.name || '不明な駅',
+                        lat: element.lat,
+                        lng: element.lon,
+                        distance: distance,
+                        operator: element.tags.operator || 'Unknown',
+                        lines: element.tags.railway || element.tags.line || 'Unknown Line'
+                    };
+                }).sort((a, b) => a.distance - b.distance);
+             }
+            
+            displayStations();
+            addStationMarkers();
+        }
+
+        // Use mock data
+        function useMockStationData() {
+            console.warn("Using mock station data due to API error.");
+            const mockStations = [
+                { name: 'Shinjuku Station', nameJa: '新宿駅', lat: 35.6896, lng: 139.7006, operator: 'JR East', lines: 'Yamanote Line' },
+                { name: 'Shibuya Station', nameJa: '渋谷駅', lat: 35.6580, lng: 139.7016, operator: 'JR East', lines: 'Yamanote Line' },
+                { name: 'Tokyo Station', nameJa: '東京駅', lat: 35.6812, lng: 139.7671, operator: 'JR East', lines: 'Multiple Lines' },
+                { name: 'Harajuku Station', nameJa: '原宿駅', lat: 35.6702, lng: 139.7027, operator: 'JR East', lines: 'Yamanote Line' }
+            ];
+            
+             if (!userLocation) {
+                 stations = mockStations.map(station => ({
+                     ...station,
+                     id: Math.random() * 100000,
+                     distance: -1 // Indicate unknown distance
+                 }));
+             } else {
+                stations = mockStations.map(station => ({
+                    ...station,
+                    id: Math.random() * 100000,
+                    distance: calculateDistance(userLocation.lat, userLocation.lng, station.lat, station.lng)
+                })).sort((a, b) => a.distance - b.distance);
+             }
+            
+            displayStations();
+            addStationMarkers();
+        }
+
+        // Calculate distance (Haversine formula)
+        function calculateDistance(lat1, lon1, lat2, lon2) {
+            const R = 6371e3; // Earth's radius in meters
+            const φ1 = lat1 * Math.PI / 180;
+            const φ2 = lat2 * Math.PI / 180;
+            const Δφ = (lat2 - lat1) * Math.PI / 180;
+            const Δλ = (lon2 - lon1) * Math.PI / 180;
+            
+            const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
+                    Math.cos(φ1) * Math.cos(φ2) *
+                    Math.sin(Δλ/2) * Math.sin(Δλ/2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+            
+            return Math.round(R * c); // Distance in meters
+        }
+
+        // Display stations
+        function displayStations() {
+            const container = $('#stationListContainer');
+            container.empty();
+            
+            if (stations.length === 0) {
+                container.html(`
+                    <div class="alert alert-warning">
+                        <i class="mdi mdi-alert"></i> ${translations[currentLanguage].noStations}
+                    </div>
+                `);
+                return;
+            }
+            
+            stations.forEach((station, index) => {
+                const walkingTime = station.distance !== -1 ? Math.round(station.distance / 80) : '--';
+                const isNavigating = navigationMode && targetStation && targetStation.id === station.id;
+                
+                const card = $(`
+                    <div class="card station-card ${isNavigating ? 'navigating' : ''} mb-3 fade-in">
+                        <div class="card-body">
+                            <div class="d-flex justify-content-between align-items-start mb-2">
+                                <h6 class="card-title mb-0">
+                                    <i class="mdi mdi-train"></i>
+                                    ${currentLanguage === 'ja' ? station.nameJa : station.name}
+                                </h6>
+                                ${isNavigating ? '<span class="badge bg-success">LIVE</span>' : ''}
+                            </div>
+                            <div class="mb-2">
+                                <span class="distance-badge">
+                                    ${station.distance !== -1 ? station.distance + 'm' : '-- m'}
+                                </span>
+                                <small class="text-muted ms-2">
+                                    <i class="mdi mdi-walk"></i> ${walkingTime} ${translations[currentLanguage].minutes}
+                                </small>
+                            </div>
+                            <small class="text-muted d-block mb-3">
+                                <i class="mdi mdi-subway-variant"></i> ${station.lines}
+                            </small>
+                            <div class="d-flex gap-2">
+                                <button class="btn btn-primary btn-sm ${isNavigating ? 'active' : ''}" 
+                                        onclick="navigateToStation(${index})">
+                                    <i class="mdi mdi-navigation"></i> ${translations[currentLanguage].navigate}
+                                </button>
+                                <button class="btn btn-outline-secondary btn-sm" 
+                                        onclick="showStationDetails(${index})">
+                                    <i class="mdi mdi-information"></i> ${translations[currentLanguage].details}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                `);
+                
+                card.on('click', function(e) {
+                    // Prevent card click if a button inside was clicked
+                    if (!$(e.target).closest('button').length) {
+                         selectStation(index);
+                    }
+                });
+                
+                container.append(card);
+            });
+        }
+
+        // Add station markers
+        function addStationMarkers() {
+            if (!map || !map.isStyleLoaded()) return; // Ensure map and style are loaded
+
+            // Clear existing markers
+            Object.values(stationMarkers).forEach(marker => marker.remove());
+            stationMarkers = {};
+            
+            stations.forEach((station, index) => {
+                const el = document.createElement('div');
+                el.className = 'station-marker';
+                el.innerHTML = `
+                    <i class="mdi mdi-train"></i>
+                    <span>${currentLanguage === 'ja' ? station.nameJa : station.name}</span>
+                `;
+                
+                const marker = new mapboxgl.Marker({
+                    element: el,
+                    anchor: 'bottom'
+                })
+                .setLngLat([station.lng, station.lat])
+                .setPopup(new mapboxgl.Popup({ offset: 25 }).setHTML(`
+                    <strong>${currentLanguage === 'ja' ? station.nameJa : station.name}</strong><br>
+                    ${translations[currentLanguage].distance}: ${station.distance !== -1 ? station.distance + 'm' : '-- m'}<br>
+                    ${station.lines}
+                `))
+                .addTo(map);
+                
+                stationMarkers[station.id] = marker;
+            });
+            
+            // Fit bounds to show all markers
+            if (stations.length > 0 && userLocation) {
+                const bounds = new mapboxgl.LngLatBounds();
+                bounds.extend([userLocation.lng, userLocation.lat]);
+                stations.forEach(station => {
+                    bounds.extend([station.lng, station.lat]);
+                });
+                 // Check if bounds are valid before fitting
+                 if (!bounds.isEmpty()) {
+                    map.fitBounds(bounds, { 
+                        padding: 80,
+                        maxZoom: 15,
+                        duration: 1000 // Animation duration
+                    });
+                 }
+            } else if (userLocation) {
+                 // Just center on user if no stations
+                 map.flyTo({
+                    center: [userLocation.lng, userLocation.lat],
+                    zoom: 14,
+                    duration: 1000
+                 });
+            }
+        }
+
+        // Select station
+        function selectStation(index) {
+            $('.station-card').removeClass('active');
+            $(`.station-card:eq(${index})`).addClass('active');
+            
+            const station = stations[index];
+             if (map) {
+                map.flyTo({
+                    center: [station.lng, station.lat],
+                    zoom: 17,
+                    pitch: 45,
+                    bearing: 0,
+                    essential: true,
+                    duration: 1000
+                });
+             }
+            
+            if (stationMarkers[station.id]) {
+                stationMarkers[station.id].togglePopup();
+            }
+        }
+
+        // Navigate to station
+        function navigateToStation(index) {
+             if (!userLocation) {
+                 showError(translations[currentLanguage].locationError + ". Please allow location access.");
+                 return;
+             }
+            const station = stations[index];
+            
+            if (navigationMode && targetStation && targetStation.id === station.id) {
+                stopNavigation();
+                return;
+            }
+            
+            navigationMode = true;
+            targetStation = station;
+            
+            if (!isTracking) {
+                toggleTracking();
+            }
+            
+            if (!followMode) {
+                toggleFollowMode();
+            }
+            
+            displayStations();
+            $('#navigationPanel').addClass('show');
+            
+            // Ensure map style is loaded before adding route layer
+            if (map.isStyleLoaded()) {
+                 updateRoute();
+            } else {
+                map.once('styleloaded', () => {
+                    updateRoute();
+                });
+            }
+        }
+
+        // Update route
+        function updateRoute() {
+            if (!map || !userLocation || !targetStation) return;
+
+            const routeSourceId = 'route';
+
+            const routeGeoJSON = {
+                'type': 'Feature',
+                'properties': {},
+                'geometry': {
+                    'type': 'LineString',
+                    'coordinates': [
+                        [userLocation.lng, userLocation.lat],
+                        [targetStation.lng, targetStation.lat]
+                    ]
+                }
+            };
+
+            // Check if the route source already exists
+            const sourceExists = map.getSource(routeSourceId);
+
+            if (sourceExists) {
+                // If source exists, just update its data
+                map.getSource(routeSourceId).setData(routeGeoJSON);
+            } else {
+                // If source does not exist, add source and layer
+                map.addSource(routeSourceId, {
+                    'type': 'geojson',
+                    'data': routeGeoJSON
+                });
+                
+                map.addLayer({
+                    'id': routeSourceId, // Use the same ID for the layer
+                    'type': 'line',
+                    'source': routeSourceId,
+                    'layout': {
+                        'line-join': 'round',
+                        'line-cap': 'round'
+                    },
+                    'paint': {
+                        'line-color': '#e60012',
+                        'line-width': 6,
+                        'line-opacity': 0.8,
+                        'line-blur': 1
+                    }
+                });
+            }
+        }
+
+        // Update navigation
+        function updateNavigation() {
+            if (!navigationMode || !targetStation) return;
+            
+            updateRoute(); // Update the route line based on new user position
+            
+            const distance = calculateDistance(
+                userLocation.lat,
+                userLocation.lng,
+                targetStation.lat,
+                targetStation.lng
+            );
+            
+            const walkingTime = Math.round(distance / 80); // Approx. 80m/min walking speed
+            
+            $('#navDistance').text(distance < 1000 ? `${distance}m` : `${(distance/1000).toFixed(1)}km`);
+            $('#navTime').text(`${walkingTime}`);
+            $('#navSpeed').text(currentSpeed.toFixed(1));
+            
+            // Check if arrived (within 50m)
+            if (distance < 50) {
+                arriveAtStation();
+            }
+             // Note: Station distances in the list are updated by handleLocationUpdate which calls updateStationDistances
+        }
+
+        // Update station distances
+        function updateStationDistances() {
+            if (!userLocation) return;
+            
+            stations.forEach(station => {
+                station.distance = calculateDistance(
+                    userLocation.lat,
+                    userLocation.lng,
+                    station.lat,
+                    station.lng
+                );
+            });
+            
+            // Re-sort based on new distances
+            stations.sort((a, b) => a.distance - b.distance);
+            displayStations(); // Re-render the list with updated distances and order
+            // Station markers automatically update popups on click/hover with the latest distance
+        }
+
+        // Arrive at station
+        function arriveAtStation() {
+            if (!navigationMode) return;
+            
+            const message = `🎉 You have arrived at ${currentLanguage === 'ja' ? targetStation.nameJa : targetStation.name}!`;
+            
+            // Bootstrap toast notification
+            const toast = $(`
+                <div class="toast position-fixed top-0 start-50 translate-middle-x mt-3" role="alert" data-bs-delay="5000">
+                    <div class="toast-header bg-success text-white">
+                        <strong class="me-auto">Arrival</strong>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="toast"></button>
+                    </div>
+                    <div class="toast-body">${message}</div>
+                </div>
+            `);
+            
+            $('body').append(toast);
+            const bsToast = new bootstrap.Toast(toast[0]);
+            bsToast.show();
+            
+            toast.on('hidden.bs.toast', function() {
+                toast.remove();
+            });
+            
+            stopNavigation();
+        }
+
+        // Stop navigation
+        function stopNavigation() {
+            navigationMode = false;
+            targetStation = null;
+            
+            // Remove route layer and source
+            const routeSourceId = 'route';
+            if (map && map.getLayer(routeSourceId)) {
+                map.removeLayer(routeSourceId);
+            }
+            if (map && map.getSource(routeSourceId)) {
+                map.removeSource(routeSourceId);
+            }
+            
+            $('#navigationPanel').removeClass('show');
+            displayStations(); // Update card states
+        }
+
+        // Show station details
+        function showStationDetails(index) {
+            const station = stations[index];
+            
+            const modal = $(`
+                <div class="modal fade" tabindex="-1">
+                    <div class="modal-dialog modal-dialog-centered">
+                        <div class="modal-content glass-card">
+                            <div class="modal-header border-bottom-0">
+                                <h5 class="modal-title">
+                                    <i class="mdi mdi-train me-2"></i>
+                                    ${currentLanguage === 'ja' ? station.nameJa : station.name}
+                                </h5>
+                                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                            </div>
+                            <div class="modal-body">
+                                <p><strong>${translations[currentLanguage].distance}:</strong> ${station.distance !== -1 ? station.distance + 'm' : '-- m'}</p>
+                                <p><strong>Lines:</strong> ${station.lines}</p>
+                                <p><strong>Operator:</strong> ${station.operator}</p>
+                                <p><strong>Coordinates:</strong> ${station.lat.toFixed(6)}, ${station.lng.toFixed(6)}</p>
+                            </div>
+                             <div class="modal-footer border-top-0">
+                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `);
+            
+            $('body').append(modal);
+            const bsModal = new bootstrap.Modal(modal[0]);
+            bsModal.show();
+            
+            modal.on('hidden.bs.modal', function() {
+                modal.remove();
+            });
+        }
+
+        // Search station
+        function searchStation() {
+            const searchTerm = $('#searchInput').val().toLowerCase();
+            if (!searchTerm) return;
+            
+            const filtered = stations.filter(station => 
+                station.name.toLowerCase().includes(searchTerm) ||
+                (station.nameJa && station.nameJa.includes(searchTerm)) // Check if nameJa exists
+            );
+            
+            if (filtered.length > 0) {
+                const index = stations.findIndex(s => s.id === filtered[0].id);
+                if (index !== -1) {
+                    selectStation(index);
+                }
+            } else {
+                showError(`No station found matching "${searchTerm}"`);
+            }
+        }
+
+        // Set language
+        function setLanguage(lang) {
+            currentLanguage = lang;
+            
+            $('.btn-group button').removeClass('active');
+            $(`.btn-group button:contains(${lang === 'en' ? 'EN' : '日本語'})`).addClass('active');
+            
+            // Update texts
+            $('#logoText').text(translations[lang].logoText);
+            $('#searchInput').attr('placeholder', translations[lang].searchPlaceholder);
+            $('#searchBtnText').text(translations[lang].searchBtn);
+            $('#nearbyStationsTitle').text(translations[lang].nearbyStations);
+            $('#trackingText').text(isTracking ? translations[lang].liveTracking : translations[lang].trackingInactive);
+            $('#navDistanceLabel').text(translations[lang].distance);
+            $('#navTimeLabel').text(translations[lang].time);
+            $('#stopNavText').text(translations[lang].stopNav);
+            
+            displayStations(); // Re-render list with localized names/distances
+            // Station markers automatically update popups on click, no need to redraw
+        }
+
+        // Reset map
+        function resetMap() {
+            if (userLocation && map) {
+                map.flyTo({
+                    center: [userLocation.lng, userLocation.lat],
+                    zoom: 14,
+                    pitch: 0,
+                    bearing: 0,
+                    essential: true,
+                    duration: 1000
+                });
+            }
+        }
+
+        // Change map style
+        function changeMapStyle() {
+             if (!map || !map.isStyleLoaded()) {
+                 showError('Map is not ready yet.');
+                 return;
+             }
+            const styles = Object.keys(mapStyles);
+            const currentIndex = styles.indexOf(mapStyle);
+            const nextIndex = (currentIndex + 1) % styles.length;
+            mapStyle = styles[nextIndex];
+            
+            map.setStyle(mapStyles[mapStyle]);
+            
+            // Show style name
+            const styleName = mapStyle.charAt(0).toUpperCase() + mapStyle.slice(1).replace(/-/g, ' ');
+            const toast = $(`
+                <div class="toast position-fixed bottom-0 end-0 m-3" role="alert" data-bs-delay="2000">
+                    <div class="toast-body">
+                        <i class="mdi mdi-layers me-2"></i> Map style: ${styleName}
+                    </div>
+                </div>
+            `);
+            
+            $('body').append(toast);
+            const bsToast = new bootstrap.Toast(toast[0]);
+            bsToast.show();
+            
+            toast.on('hidden.bs.toast', function() {
+                toast.remove();
+            });
+
+             // The 'styledata' event listener automatically handles re-adding layers like 3d buildings and the route.
+             // User marker is handled by handleLocationUpdate/updateUserMarker.
+        }
+
+        // Handle enter key in search
+        $('#searchInput').on('keypress', function(e) {
+            if (e.key === 'Enter') {
+                searchStation();
+            }
+        });
+
+        // Clean up on page unload
+        $(window).on('beforeunload', function() {
+            if (watchId) {
+                navigator.geolocation.clearWatch(watchId);
+            }
+             // Clean up map if it exists (important for single-page apps, less crucial for simple static)
+            if (map) {
+                map.remove();
+            }
+        });
+    </script>
+</body>
+</html>
